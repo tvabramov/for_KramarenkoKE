@@ -7,3 +7,4 @@
 * kr_4.tar.gz - 4-th work, it is "fork()" function testing
 * kr_5.tar.gz - 5-th work, creating the simple daemon
 * kr_6.tar.gz - 6-th work, file manager (advanced kr_2) with ability to run programs
+* kr_7.tar.gz - 7-th work, posix's threads testing, there is store, uploader and downloaders
