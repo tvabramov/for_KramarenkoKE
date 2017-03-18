@@ -10,8 +10,10 @@
 #include <sys/mman.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ctype.h>
 
-#define CHAR_BUF_SIZE 256
+#define MAX_MSG_LEN 55
+
 
 typedef struct WIN_PARAMS_struct {
 	int bx, by;
@@ -25,7 +27,8 @@ void init_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS memb
                   WINDOW **allmsg_win, WINDOW **members_win, WINDOW **usermsg_win);
 void clearWin(WIN_PARAMS win_p, WINDOW *win);
 void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS members_win_p, WIN_PARAMS usermsg_win_p,
-                  WINDOW *allmsg_win, WINDOW *members_win, WINDOW *usermsg_win);
+                     WINDOW *allmsg_win, WINDOW *members_win, WINDOW *usermsg_win,
+                     char *usermsg);
 void initNC();
 
 int main(int argc, char **argv)
@@ -35,14 +38,17 @@ int main(int argc, char **argv)
 
 	initNC();
 
+	// Windows initializing
 	init_windows_params(&std_win_p, &allmsg_win_p, &members_win_p, &usermsg_win_p);
 
 	init_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, &allmsg_win, &members_win, &usermsg_win);
 
-	refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win);
-
-
-	// Some global params
+	// Global parameters initializing
+	char usermsg[MAX_MSG_LEN + 1];
+	memset(usermsg, 0, sizeof(char) * MAX_MSG_LEN);
+	
+	// Windows first refreshing to show default data
+	refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, usermsg);
 
 	while (1)
 	{
@@ -51,32 +57,31 @@ int main(int argc, char **argv)
                 switch(ch)
                 {
                         case (int)'\n': // enter
-				//endwin();
-				
-				clearWin(usermsg_win_p, usermsg_win);
-                                break;
-				//initNC(); 
+				memset(usermsg, 0, sizeof(char) * MAX_MSG_LEN);
+
+                                break; 
                         case 127: // backspace
-                                /*getyx(win, cury, curx);
-                                mvwaddch(win, cury, curx, ' ');
-                                res[curx - 1] = '\0';
-                                wmove(win, cury, curx - 1);
-                                wrefresh(win);*/
+                                if (strlen(usermsg) > 0) {
+					usermsg[strlen(usermsg) - 1] = '\0';
+				}
+                                
                                 break;
 			case KEY_F(10):
                                 endwin();
                                 
                                 exit(0);
                         default:
-				clearWin(usermsg_win_p, usermsg_win);
-                                /*getyx(win, cury, curx);
-                                mvwaddch(win, cury, curx, ch);
-                                res[curx - 1] = (char)ch;
-                                if (curx >= (win_p.w - 2)) {
-                                        wmove(win, cury, curx);
-                                }
-                                wrefresh(win);*/
+			{
+				//TODO not worked properly
+				if (isprint(ch) != 0) {
+					if (strlen(usermsg) < MAX_MSG_LEN) {
+						usermsg[strlen(usermsg)] = (char)ch;
+					}
+				}
+			}
                 }
+
+		refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, usermsg);
 	}
 
 	// End ncurses mode
@@ -186,7 +191,8 @@ void clearWin(WIN_PARAMS win_p, WINDOW *win)
 }
 
 void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS members_win_p, WIN_PARAMS usermsg_win_p,
-                     WINDOW *allmsg_win, WINDOW *members_win, WINDOW *usermsg_win)
+                     WINDOW *allmsg_win, WINDOW *members_win, WINDOW *usermsg_win,
+                     char *usermsg)
 {
 	// Some details on main window
         clearWin(std_win_p, stdscr);
@@ -213,9 +219,8 @@ void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS m
 	// User message window
 	clearWin(usermsg_win_p, usermsg_win);
         attron(usermsg_win_p.attrs_usual);
-        //TODO print user message
-
-	wmove(usermsg_win, 0, 0);
+	mvwprintw(usermsg_win, 0, 0, usermsg);
+	wmove(usermsg_win, 0, strlen(usermsg));
         curs_set(2);
 
         wrefresh(usermsg_win);
