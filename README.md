@@ -12,3 +12,5 @@
 * kr_9.tar.gz - 9-th work, simulating the typical pthread data transferring error
 * kr_10.tar.gz - 10-th work, isolated program which lauches piped programs, such as "ls | head -n 5"
 * kr_11.tar.gz - 11-th work, file manager with piped launching.
+* kr_12 - 12-th the file chat via IPC (Message Queues) mechanism.
+
