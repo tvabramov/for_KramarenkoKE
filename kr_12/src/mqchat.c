@@ -11,9 +11,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include "clinit.h"
 
 #define MAX_MSG_LEN 55
-
 
 typedef struct WIN_PARAMS_struct {
 	int bx, by;
@@ -33,10 +33,22 @@ void initNC();
 
 int main(int argc, char **argv)
 {
+	// Initialization from launch parameters "argv"
+	CLINIT_PARAMS lp;
+	if (clinit(argc, argv, &lp) != 0) {
+		fprintf(stderr, "main(): fatal error on \"clinit()\" function\n");
+		exit(EXIT_FAILURE);
+	}
+
+	// Print launch parameters
+	print_clinit_params(lp);
+
+	// NCurses initialization
+	initNC();
+
+	// Windows defining
 	WINDOW *allmsg_win, *members_win, *usermsg_win;
 	WIN_PARAMS std_win_p, allmsg_win_p, members_win_p, usermsg_win_p;
-
-	initNC();
 
 	// Windows initializing
 	init_windows_params(&std_win_p, &allmsg_win_p, &members_win_p, &usermsg_win_p);
@@ -87,7 +99,7 @@ int main(int argc, char **argv)
 	// End ncurses mode
 	endwin();
 
-	return 0;
+	exit(EXIT_SUCCESS);
 }
 
 void destroy_win(WINDOW *local_win)
