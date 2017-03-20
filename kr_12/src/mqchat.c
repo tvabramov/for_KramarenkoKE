@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <ctype.h>
 #include "clinit.h"
+#include "msgq.h"
 
 #define MAX_MSG_LEN 55
 
@@ -28,6 +29,7 @@ void init_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS memb
 void clearWin(WIN_PARAMS win_p, WINDOW *win);
 void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS members_win_p, WIN_PARAMS usermsg_win_p,
                      WINDOW *allmsg_win, WINDOW *members_win, WINDOW *usermsg_win,
+                     char **allmsg, int allmsg_lines_count,
                      char *usermsg);
 void initNC();
 
@@ -43,6 +45,12 @@ int main(int argc, char **argv)
 	// Print launch parameters
 	print_clinit_params(lp);
 
+	int msgid = (lp.i_am_server == 1) ? start_server() : start_client();
+	if (msgid < 0) {
+		fprintf(stderr, "Cannot start msg\n");
+		exit(EXIT_FAILURE);
+	}
+
 	// NCurses initialization
 	initNC();
 
@@ -56,11 +64,22 @@ int main(int argc, char **argv)
 	init_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, &allmsg_win, &members_win, &usermsg_win);
 
 	// Global parameters initializing
-	char usermsg[MAX_MSG_LEN + 1];
-	memset(usermsg, 0, sizeof(char) * MAX_MSG_LEN);
-	
+	int usermsg_length = MAX_MSG_LEN;
+	char* usermsg = (char *)malloc((usermsg_length + 1) * sizeof(char));
+	memset(usermsg, 0, sizeof(char) * (usermsg_length + 1));
+
+	int allmsg_lines_count = allmsg_win_p.h;
+	int allmsg_lines_length = MAX_MSG_LEN + MAX_NICKNAME_LEN + 2;
+
+	char** allmsg = (char **)malloc(allmsg_lines_count * sizeof(char*));
+	int i;
+	for (i = 0; i < allmsg_lines_count; i++) {
+		allmsg[i] = (char *)malloc((allmsg_lines_length + 1) * sizeof(char));
+		memset(allmsg[i], (int)'-', sizeof(char) * allmsg_lines_length);
+		allmsg[i][allmsg_lines_length] = '\0';
+	}
 	// Windows first refreshing to show default data
-	refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, usermsg);
+	refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, allmsg, allmsg_lines_count, usermsg);
 
 	while (1)
 	{
@@ -80,7 +99,13 @@ int main(int argc, char **argv)
                                 break;
 			case KEY_F(10):
                                 endwin();
-                                
+         			close_connection(msgid);
+				free(usermsg);
+				for (i = 0; i < allmsg_lines_count; i++) {
+                			free(allmsg[i]);
+				}
+				free(allmsg);
+
                                 exit(0);
                         default:
 			{
@@ -93,11 +118,19 @@ int main(int argc, char **argv)
 			}
                 }
 
-		refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, usermsg);
+		refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, allmsg, allmsg_lines_count, usermsg);
 	}
 
 	// End ncurses mode
 	endwin();
+	// End IPC connection
+	close_connection(msgid);
+	// Free memory
+	free(usermsg);
+        for (i = 0; i < allmsg_lines_count; i++) {
+        	free(allmsg[i]);
+	}
+	free(allmsg);
 
 	exit(EXIT_SUCCESS);
 }
@@ -204,6 +237,7 @@ void clearWin(WIN_PARAMS win_p, WINDOW *win)
 
 void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS members_win_p, WIN_PARAMS usermsg_win_p,
                      WINDOW *allmsg_win, WINDOW *members_win, WINDOW *usermsg_win,
+                     char **allmsg, int allmsg_lines_count,
                      char *usermsg)
 {
 	// Some details on main window
@@ -218,8 +252,12 @@ void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS m
 
 	// All messages window
 	clearWin(allmsg_win_p, allmsg_win);
-	attron(std_win_p.attrs_usual);
-	//TODO print current messages list
+	attron(allmsg_win_p.attrs_usual);
+	int i;
+        for (i = 0; i < allmsg_lines_count; i++) {
+                mvwprintw(allmsg_win, i, 0, allmsg[i]);
+        }
+
 	wrefresh(allmsg_win);
 
 	// Members list window

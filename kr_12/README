@@ -8,3 +8,6 @@ mqchat <>
 
 If you want to run piped, "ls -1 | head -n 5", for example, use F8 key.
 
+HELP:
+
+https://www.opennet.ru/base/dev/ipc_msg.txt.html
