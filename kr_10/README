@@ -1,0 +1,5 @@
+Creating the program to start such piped utilitires:
+ls | grep
+or similar
+
+NOTE: Tested via valgrind

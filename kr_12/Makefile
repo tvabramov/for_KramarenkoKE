@@ -1,11 +1,11 @@
 CC = gcc
-CFLAGS = -Wall -O0 -ggdb -I/home/students/tvabramov/kr_12/my-ncurses/include
-LDFLAGS = -L/home/students/tvabramov/kr_12/my-ncurses/lib -lncurses
+CFLAGS = -Wall -O0 -ggdb -I/home/students/tvabramov/my-ncurses/include
+LDFLAGS = -L/home/students/tvabramov/my-ncurses/lib -lncurses
 
 all: mqchat
 
 mqchat: ./src/mqchat.o ./src/clinit.o ./src/msgq.o
-	$(CC) ./src/mqchat.o ./src/clinit.o ./src/msgq.o -o mqchat $(LDFLAGS)
+	$(CC) ./src/mqchat.o ./src/clinit.o ./src/msgq.o -o ./bin/mqchat $(LDFLAGS)
 
 mqchat.o: ./src/mqchat.c
 	$(CC) $(CFLAGS) -c ./src/mqchat.c -o ./src/mqchat.o 
@@ -17,4 +17,4 @@ msgq.o: ./src/msgq.c ./src/msgq.h
 	$(CC) $(CFLAGS) -c ./src/msgq.c -o ./src/msgq.o
 
 clean:
-	rm mqchat ./src/*.o
+	rm ./bin/* ./src/*.o

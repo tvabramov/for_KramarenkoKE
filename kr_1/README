@@ -1,0 +1,19 @@
+DESCRIPTION:
+
+This is the phone book that stores name, family name and phone of each
+abonent. The phone book is only in RAM, there is no store/load procedures
+right now. When program starts, it fill the empty list by several records.
+Further, in an infinite loop, the program reads user commands and changes
+the phone book according to these commands.
+
+HOW TO USE IT:
+
+After program launching you will be offered to type your command (after ">"
+character). You may type "help" command to get list of availiable commands
+or "exit" to exit the program. By these commands you can add, remove records
+to the phone book, and find needed records.
+
+AUTHOR:
+
+Timofey V. Abramov, timohamail@inbox.ru, +79130178295.
+

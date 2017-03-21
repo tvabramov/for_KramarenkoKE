@@ -1,0 +1,4 @@
+http://tldp.org/HOWTO/NCURSES-Programming-HOWTO/attrib.html - Атрибуты
+http://tldp.org/HOWTO/NCURSES-Programming-HOWTO/windows.html - Окна
+http://stackoverflow.com/questions/4204666/how-to-list-files-in-a-directory-in-a-c-program - about DIR
+

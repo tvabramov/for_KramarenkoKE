@@ -1,0 +1,4 @@
+Pthreads testing with condions - two threads with "a" incrementing
+
+Problem with pthread_cond_wait() when using valgrind - blocking,
+and sometimes in usual running.

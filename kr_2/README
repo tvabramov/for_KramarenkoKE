@@ -1,0 +1,6 @@
+Directory and file viewer + file editor (kr_3's child project)
+
+To edit a file, press "Enter", when you can replace its characters.
+Working with files is done via mapping files into memory - mmap and msync functions.
+To Apply changes and save file, press F6 key.
+
