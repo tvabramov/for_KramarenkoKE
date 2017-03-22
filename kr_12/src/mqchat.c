@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <pthread.h>
 #include "clinit.h"
 #include "msgq.h"
 
@@ -22,6 +23,27 @@ typedef struct WIN_PARAMS_struct {
 	int attrs_usual, attrs_highline;
 } WIN_PARAMS;
 
+#define MSGSZ (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) 
+
+typedef struct msgbuf {
+	long mtype;
+	char mtext[MSGSZ];
+} msgbuf_t;
+
+#define MTYPE_REGULAR 2L
+#define MTYPE_NICKNAME 1L
+
+
+// For threads:
+typedef struct msg_rcv_in_data_t_struct {
+	int msgid;
+        char **msgs;
+	int linescount;
+	int msglen;
+	WIN_PARAMS win_p;
+	WINDOW *win;
+} msg_rcv_in_data_t;
+
 void destroy_win(WINDOW *local_win);
 void init_windows_params(WIN_PARAMS *std_win_p, WIN_PARAMS *allmsg_win_p, WIN_PARAMS *members_win_p, WIN_PARAMS *usermsg_win_p);
 void init_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS members_win_p, WIN_PARAMS usermsg_win_p,
@@ -32,6 +54,9 @@ void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS m
                      char **allmsg, int allmsg_lines_count,
                      char *usermsg);
 void initNC();
+int sendmessage(int msgid, const char* nickname, const char* msg);
+int sendnickname(int msgid, const char* nickname);
+void *regular_messages_reciever_work(void *args);
 
 int main(int argc, char **argv)
 {
@@ -50,6 +75,22 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Cannot start msg\n");
 		exit(EXIT_FAILURE);
 	}
+/*
+{ // Test
+	sendmessage(msgid, lp.nickname, "Hello World");
+
+	msgbuf_t rbuf;
+	if (msgrcv(msgid, &rbuf, MSGSZ, 1, 0) < 0) {
+        	perror("msgrcv");
+	        exit(EXIT_FAILURE);
+	} else {
+        	printf(rbuf.mtext);
+		printf("\n");
+	}
+
+	return 0;
+}
+*/
 
 	// NCurses initialization
 	initNC();
@@ -78,6 +119,35 @@ int main(int argc, char **argv)
 		memset(allmsg[i], (int)'-', sizeof(char) * allmsg_lines_length);
 		allmsg[i][allmsg_lines_length] = '\0';
 	}
+
+	// Threads init
+        msg_rcv_in_data_t msg_rcv_in;
+	msg_rcv_in.msgid = msgid;
+	msg_rcv_in.msgs = allmsg;
+        msg_rcv_in.linescount = allmsg_lines_count;
+        msg_rcv_in.msglen = allmsg_lines_length;
+        msg_rcv_in.win_p = allmsg_win_p;
+        msg_rcv_in.win = allmsg_win;
+
+	pthread_t msg_rcv_thread;
+	pthread_attr_t msg_rcv_attr;
+
+	if (pthread_attr_init(&msg_rcv_attr) != 0) {
+                perror("pthread_attr_init");
+                exit(EXIT_FAILURE);
+        }
+        pthread_attr_setdetachstate(&msg_rcv_attr, PTHREAD_CREATE_JOINABLE);
+
+        if (pthread_create(&msg_rcv_thread, &msg_rcv_attr, &regular_messages_reciever_work, &msg_rcv_in) != 0) {
+                perror("pthread_create");
+                exit(EXIT_FAILURE);
+        }
+
+        // Send my nickname, if i am client
+        if (lp.i_am_server == 0) {
+                sendnickname(msgid, lp.nickname);
+        }
+
 	// Windows first refreshing to show default data
 	refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, allmsg, allmsg_lines_count, usermsg);
 
@@ -88,6 +158,8 @@ int main(int argc, char **argv)
                 switch(ch)
                 {
                         case (int)'\n': // enter
+				sendmessage(msgid, lp.nickname, usermsg);
+
 				memset(usermsg, 0, sizeof(char) * MAX_MSG_LEN);
 
                                 break; 
@@ -98,8 +170,14 @@ int main(int argc, char **argv)
                                 
                                 break;
 			case KEY_F(10):
+				{
+				void *thread_out_data;
+				if (pthread_join(msg_rcv_thread, &thread_out_data) != 0) {
+					perror("pthread_join");
+                        		exit(EXIT_FAILURE);
+                		}
                                 endwin();
-         			close_connection(msgid);
+         			if (lp.i_am_server == 1) close_connection(msgid);
 				free(usermsg);
 				for (i = 0; i < allmsg_lines_count; i++) {
                 			free(allmsg[i]);
@@ -107,6 +185,7 @@ int main(int argc, char **argv)
 				free(allmsg);
 
                                 exit(0);
+				}
                         default:
 			{
 				//TODO not worked properly
@@ -121,10 +200,16 @@ int main(int argc, char **argv)
 		refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, allmsg, allmsg_lines_count, usermsg);
 	}
 
+	// Join thread
+	void *thread_out_data;
+	if (pthread_join(msg_rcv_thread, &thread_out_data) != 0) {
+        	perror("pthread_join");
+                exit(EXIT_FAILURE);
+	}
 	// End ncurses mode
 	endwin();
 	// End IPC connection
-	close_connection(msgid);
+	if (lp.i_am_server == 1) close_connection(msgid);
 	// Free memory
 	free(usermsg);
         for (i = 0; i < allmsg_lines_count; i++) {
@@ -295,85 +380,61 @@ void initNC()
         // Hide cursor
         curs_set(0);
 }
-/*
-char* InputWindow(char* header, WIN_PARAMS main_win_p)
+
+int sendmessage(int msgid, const char* nickname, const char* msg)
 {
-	int i, j, curx, cury;
-	WINDOW *win;
-	WIN_PARAMS win_p;
+	msgbuf_t buf;
 
-	win_p = main_win_p;
-	win_p.w = main_win_p.w / 3;
-	win_p.h = 5;
-	win_p.bx = (main_win_p.w - win_p.w) / 2;
-	win_p.by = (main_win_p.h - win_p.h) / 2;
-	
-	win = newwin(win_p.h, win_p.w, win_p.by, win_p.bx);
+	buf.mtype = MTYPE_REGULAR;
 
-        wattron(win, win_p.attrs_usual);
-        for (i = 0; i < win_p.h; i++)
-        for (j = 0; j < win_p.w; j++)
-                mvwaddch(win, i, j, ' ');
+	memset(buf.mtext, (int)' ', sizeof(char) * MAX_NICKNAME_LEN);                    // for nickname
+	memset(&buf.mtext[MAX_NICKNAME_LEN + 2], (int)'-', sizeof(char) * MAX_MSG_LEN);  // for message
+	buf.mtext[MSGSZ - 1] = '\0';
+	memcpy(buf.mtext, nickname, strlen(nickname));
+	buf.mtext[MAX_NICKNAME_LEN] = ':';
+	buf.mtext[MAX_NICKNAME_LEN + 1] = ' ';
+	memcpy(&buf.mtext[MAX_NICKNAME_LEN + 2], msg, strlen(msg));
 
-	mvwprintw(win, 1, 1, header);
-
-        wmove(win, 3, 1);
-	curs_set(2);
-
-	wrefresh(win);
-
-	char* res = (char *)malloc(sizeof(char) * (win_p.w - 1));
-	memset(res, 0, sizeof(char) * (win_p.w - 1));
-	while (1) {
-		int ch = getch();
-		switch(ch)
-		{
-while (1) {
-                int ch = getch();
-                switch(ch)
-                {
-                        case (int)'\n':
-                                break;
-                        case 127:
-                                getyx(win, cury, curx);
-                                mvwaddch(win, cury, curx, ' ');
-                                res[curx - 1] = '\0';
-                                wmove(win, cury, curx - 1);
-                                wrefresh(win);
-                                break;
-                        default:
-                                getyx(win, cury, curx);
-                                mvwaddch(win, cury, curx, ch);
-                                res[curx - 1] = (char)ch;
-                                if (curx >= (win_p.w - 2)) {
-                                        wmove(win, cury, curx);
-                                }
-                                wrefresh(win);
-                }
-
-                if (ch == (int)'\n') break;
-        }			case (int)'\n':
-				break;
-			case 127:
-				getyx(win, cury, curx);
-				mvwaddch(win, cury, curx, ' ');
-				res[curx - 1] = '\0';
-				wmove(win, cury, curx - 1);
-                                wrefresh(win);
-				break;
-			default:
-				getyx(win, cury, curx);
-				mvwaddch(win, cury, curx, ch);
-				res[curx - 1] = (char)ch;
-				if (curx >= (win_p.w - 2)) {
-					wmove(win, cury, curx);
-				}
-				wrefresh(win);
-		}
-
-		if (ch == (int)'\n') break;
+	if (msgsnd(msgid, &buf, MSGSZ * sizeof(char), IPC_NOWAIT) < 0) {
+        	perror("msgsnd error");
+        	return -1;
 	}
 
-	return res;
+	return 0;
 }
-*/
+
+int sendnickname(int msgid, const char* nickname)
+{
+        msgbuf_t buf;
+
+        buf.mtype = MTYPE_NICKNAME;
+
+	sprintf(buf.mtext, "%s", nickname);
+
+        if (msgsnd(msgid, &buf, MSGSZ * sizeof(char), IPC_NOWAIT) < 0) {
+                perror("msgsnd error");
+                return -1;
+        }
+
+        return 0;
+}
+
+void *regular_messages_reciever_work(void *args)
+{
+	msg_rcv_in_data_t *data = (msg_rcv_in_data_t *)args;
+
+	//printf("%d", data->linescount);
+	for ( ; ; ) {
+		msgbuf_t rbuf;
+        	if (msgrcv(data->msgid, &rbuf, MSGSZ, MTYPE_REGULAR, 0) < 0) {
+                	perror("msgrcv");
+                	exit(EXIT_FAILURE);
+        	}
+
+		printf("%s\n", rbuf.mtext);
+		//mvwprintw(data->win, 0, 0, rbuf.mtext);
+	}	
+
+	return NULL;	
+}
+
