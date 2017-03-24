@@ -31,23 +31,23 @@ typedef struct msgbuf {
 } msgbuf_t;
 
 #define MTYPE_REGULAR 2L
-#define MTYPE_NICKNAME 1L
+//#define MTYPE_NICKNAME 1L
 
 
-// For threads (same):
+// For thread msg_rcv:
 typedef struct msg_rcv_in_data_t_struct {
 	int msgid;
-        char **msgs;		// We must not modify it outside the thread, or we need mutex
+        char **allmsg;
+	char *usermsg;
+	char **nicknames; 
 	int linescount;
-	int msglen;
-	WINDOW* win;		// Some trouble may be, if we work with window in the thread
-	WIN_PARAMS win_p;
+	int allmsg_len;
+	WINDOW *allmsg_win, *members_win, *usermsg_win;
+	WIN_PARAMS std_win_p, allmsg_win_p, members_win_p, usermsg_win_p;
 } msg_rcv_in_data_t;
 
-//Mutex to work wit allmsg
-pthread_mutex_t msg_mutex;
-//Mutex to work with nicknames
-pthread_mutex_t nick_mutex;
+//Mutex to refresh windows, changing messages list
+pthread_mutex_t main_mutex;
 
 void destroy_win(WINDOW *local_win);
 void init_windows_params(WIN_PARAMS *std_win_p, WIN_PARAMS *allmsg_win_p, WIN_PARAMS *members_win_p, WIN_PARAMS *usermsg_win_p);
@@ -61,9 +61,9 @@ void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS m
                      char *usermsg);
 void initNC();
 int sendmessage(int msgid, const char* nickname, const char* msg);
-int sendnickname(int msgid, const char* nickname);
-void *regular_messages_reciever_work(void *args);
-void *nickname_messages_reciever_work(void *args);
+void *messages_reciever_work(void *args);
+
+//#difine COUNT_
 
 int main(int argc, char **argv)
 {
@@ -82,22 +82,6 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Cannot start msg\n");
 		exit(EXIT_FAILURE);
 	}
-/*
-{ // Test
-	sendmessage(msgid, lp.nickname, "Hello World");
-
-	msgbuf_t rbuf;
-	if (msgrcv(msgid, &rbuf, MSGSZ, 1, 0) < 0) {
-        	perror("msgrcv");
-	        exit(EXIT_FAILURE);
-	} else {
-        	printf(rbuf.mtext);
-		printf("\n");
-	}
-
-	return 0;
-}
-*/
 
 	// NCurses initialization
 	initNC();
@@ -137,12 +121,20 @@ int main(int argc, char **argv)
 	// Thread for regular messages init
         msg_rcv_in_data_t msg_rcv_in;
 	msg_rcv_in.msgid = msgid;
-	msg_rcv_in.msgs = allmsg;
+	msg_rcv_in.allmsg = allmsg;
+	msg_rcv_in.usermsg = usermsg;
+	msg_rcv_in.nicknames = nicknames;
         msg_rcv_in.linescount = allmsg_lines_count;
-        msg_rcv_in.msglen = allmsg_lines_length;
-	msg_rcv_in.win = allmsg_win;       
-	msg_rcv_in.win_p = allmsg_win_p;
-	pthread_mutex_init(&msg_mutex, NULL);
+        msg_rcv_in.allmsg_len = allmsg_lines_length;
+	msg_rcv_in.allmsg_win = allmsg_win;
+	msg_rcv_in.members_win = members_win;
+	msg_rcv_in.usermsg_win = usermsg_win;
+	msg_rcv_in.std_win_p = std_win_p;
+	msg_rcv_in.allmsg_win_p = allmsg_win_p;
+	msg_rcv_in.members_win_p = members_win_p;
+	msg_rcv_in.usermsg_win_p = usermsg_win_p;
+
+	pthread_mutex_init(&main_mutex, NULL);
 
 	pthread_t msg_rcv_thread;
 	pthread_attr_t msg_rcv_attr;
@@ -153,55 +145,30 @@ int main(int argc, char **argv)
         }
         pthread_attr_setdetachstate(&msg_rcv_attr, PTHREAD_CREATE_JOINABLE);
 
-        if (pthread_create(&msg_rcv_thread, &msg_rcv_attr, &regular_messages_reciever_work, &msg_rcv_in) != 0) {
+        if (pthread_create(&msg_rcv_thread, &msg_rcv_attr, &messages_reciever_work, &msg_rcv_in) != 0) {
                 perror("pthread_create");
                 exit(EXIT_FAILURE);
         }
 
-	// Thread for nicknames init
-        msg_rcv_in_data_t nick_rcv_in;
-        nick_rcv_in.msgid = msgid;
-        nick_rcv_in.msgs = nicknames;
-        nick_rcv_in.linescount = allmsg_lines_count;
-        nick_rcv_in.msglen = MAX_NICKNAME_LEN;
-	nick_rcv_in.win = members_win;
-        nick_rcv_in.win_p = members_win_p;
-	pthread_mutex_init(&nick_mutex, NULL);
-
-        pthread_t nick_rcv_thread;
-        pthread_attr_t nick_rcv_attr;
-
-        if (pthread_attr_init(&nick_rcv_attr) != 0) {
-                perror("pthread_attr_init");
-                exit(EXIT_FAILURE);
-        }
-        pthread_attr_setdetachstate(&nick_rcv_attr, PTHREAD_CREATE_JOINABLE);
-
-        if (pthread_create(&nick_rcv_thread, &nick_rcv_attr, &nickname_messages_reciever_work, &nick_rcv_in) != 0) {
-                perror("pthread_create");
-                exit(EXIT_FAILURE);
-        }
+	//
 
         // Send my nickname
-	sendnickname(msgid, lp.nickname);
+	//sendnickname(msgid, lp.nickname);
 
 	// Windows first refreshing to show default data
-	pthread_mutex_lock(&msg_mutex);
-	pthread_mutex_lock(&nick_mutex);
+	pthread_mutex_lock(&main_mutex);
 
 	refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, allmsg, allmsg_lines_count, nicknames, usermsg);
 
-	pthread_mutex_unlock(&msg_mutex);
-	pthread_mutex_unlock(&nick_mutex);
-
+	pthread_mutex_unlock(&main_mutex);
+	
 	while (1)
 	{
 		// Getting current working dir and files
                 int ch = getch();
 
-		pthread_mutex_lock(&msg_mutex);
-		pthread_mutex_lock(&nick_mutex);
-
+		pthread_mutex_lock(&main_mutex);
+		
                 switch(ch)
                 {
                         case (int)'\n': // enter
@@ -218,16 +185,12 @@ int main(int argc, char **argv)
                                 break;
 			case KEY_F(10):
 				{
-				// close thread, because it is usually blocked
+				// close thread, not join, because it is usually blocked
 			        if (pthread_cancel(msg_rcv_thread) != 0) {
                 			perror("pthread_cancel");
 			                exit(EXIT_FAILURE);
 			        }
-				/*void *thread_out_data;
-				if (pthread_join(msg_rcv_thread, &thread_out_data) != 0) {
-					perror("pthread_join");
-                        		exit(EXIT_FAILURE);
-                		}*/
+
                                 endwin();
 
          			if (lp.i_am_server == 1) close_connection(msgid);
@@ -259,20 +222,15 @@ int main(int argc, char **argv)
 
 		refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, allmsg, allmsg_lines_count, nicknames, usermsg);
 
-		pthread_mutex_unlock(&msg_mutex);
-		pthread_mutex_unlock(&nick_mutex);
+		pthread_mutex_unlock(&main_mutex);
 	}
 
-	// close thread, because it is usually blocked
+	// close thread, not join, because it is usually blocked
 	if (pthread_cancel(msg_rcv_thread) != 0) {
 		perror("pthread_cancel");
 		exit(EXIT_FAILURE);
 	}
-	/*void *thread_out_data;
-	if (pthread_join(msg_rcv_thread, &thread_out_data) != 0) {
-        	perror("pthread_join");
-                exit(EXIT_FAILURE);
-	}*/
+	
 	// End ncurses mode
 	endwin();
 	// End IPC connection
@@ -479,93 +437,40 @@ int sendmessage(int msgid, const char* nickname, const char* msg)
 	return 0;
 }
 
-int sendnickname(int msgid, const char* nickname)
-{
-        msgbuf_t buf;
-
-        buf.mtype = MTYPE_NICKNAME;
-
-	memset(buf.mtext, (int)' ', sizeof(char) * MAX_NICKNAME_LEN);
-	buf.mtext[MAX_NICKNAME_LEN] = '\0';
-	memcpy(buf.mtext, nickname, strlen(nickname));
-
-        if (msgsnd(msgid, &buf, MSGSZ * sizeof(char), IPC_NOWAIT) < 0) {
-                perror("msgsnd error");
-                return -1;
-        }
-
-        return 0;
-}
-
-void *regular_messages_reciever_work(void *args)
+void *messages_reciever_work(void *args)
 {
 	msg_rcv_in_data_t *data = (msg_rcv_in_data_t *)args;
 
 	for ( ; ; ) {
+		// TODO This cycle is no-blocking, so it may take many time
 		msgbuf_t rbuf;
-        	if (msgrcv(data->msgid, &rbuf, MSGSZ, MTYPE_REGULAR, 0) < 0) {
+        	if (msgrcv(data->msgid, &rbuf, MSGSZ, MTYPE_REGULAR, IPC_NOWAIT) < 0) {
+			// If there is no message
+			if (errno == ENOMSG) continue;
+
+			// in another way we cancel it
                 	perror("msgrcv");
                 	exit(EXIT_FAILURE);
-        	}
-	
-		pthread_mutex_lock(&msg_mutex);
+        	}	
+
+		pthread_mutex_lock(&main_mutex);
 	
 		int i;
 		for (i = 0; i < (data->linescount - 1); i++)
-			memcpy(data->msgs[i],
-                               data->msgs[i + 1],
-			       sizeof(char) * data->msglen);		
-		memcpy(data->msgs[data->linescount - 1], rbuf.mtext, sizeof(char) * strlen(rbuf.mtext));
+			memcpy(data->allmsg[i],
+                               data->allmsg[i + 1],
+			       sizeof(char) * data->allmsg_len);		
+		memcpy(data->allmsg[data->linescount - 1], rbuf.mtext, sizeof(char) * strlen(rbuf.mtext));
 
-		// Refresh window
-        	clearWin(data->win_p, data->win);
-        	attron(data->win_p.attrs_usual);
-        	
-        	for (i = 0; i < data->linescount; i++) {
-                	mvwprintw(data->win, i, 0, data->msgs[i]);
-        	}
+		// Refresh windows
+		refresh_windows(data->std_win_p, data->allmsg_win_p, data->members_win_p, data->usermsg_win_p,
+                                data->allmsg_win, data->members_win, data->usermsg_win,
+                                data->allmsg, data->linescount, data->nicknames, data->usermsg);
 
-        	wrefresh(data->win);
-
-		pthread_mutex_unlock(&msg_mutex);
+		pthread_mutex_unlock(&main_mutex);
 	}	
 
 	return NULL;	
 }
 
-void *nickname_messages_reciever_work(void *args)
-{
-	msg_rcv_in_data_t *data = (msg_rcv_in_data_t *)args;
 
-	for ( ; ; ) {
-                msgbuf_t rbuf;
-                if (msgrcv(data->msgid, &rbuf, MSGSZ, MTYPE_NICKNAME, 0) < 0) {
-                        perror("msgrcv");
-                        exit(EXIT_FAILURE);
-                }
-
-		pthread_mutex_lock(&nick_mutex);
-
-		int i;
-                for (i = (data->linescount - 1); i > 0; i--)
-                        memcpy(data->msgs[i],
-                               data->msgs[i - 1],
-                               sizeof(char) * data->msglen);
-
-                memcpy(data->msgs[0], rbuf.mtext, sizeof(char) * strlen(rbuf.mtext));
-
-		// Refresh window
-                clearWin(data->win_p, data->win);
-                attron(data->win_p.attrs_usual);
-
-                for (i = 0; i < data->linescount; i++) {
-                        mvwprintw(data->win, i, 0, data->msgs[i]);
-                }
-
-                wrefresh(data->win);
-
-		pthread_mutex_unlock(&nick_mutex);
-        }
-
-	return NULL;
-}
