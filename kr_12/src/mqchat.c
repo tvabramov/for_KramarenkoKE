@@ -101,14 +101,14 @@ int main(int argc, char **argv)
 		msg_long_buf_t lbuf;
 		lbuf.mtype = MEMBERS_COUNT_MTYPE;
 		lbuf.param = 1L;
-        	if (msgsnd(msgid, &lbuf, sizeof(long), IPC_NOWAIT) < 0) {
+        	if (msgsnd(msgid, &lbuf, sizeof(msg_long_buf_t) - sizeof(long), IPC_NOWAIT) < 0) {
                		perror("msgsnd");
 	                exit(EXIT_FAILURE);
 	        }
 	} else {
 		// Get amount of members
 	        msg_long_buf_t lbuf;
-	        if (msgrcv(msgid, &lbuf, sizeof(long), MEMBERS_COUNT_MTYPE, 0) < 0) {
+	        if (msgrcv(msgid, &lbuf, sizeof(msg_long_buf_t) - sizeof(long), MEMBERS_COUNT_MTYPE, 0) < 0) {
 	                perror("msgrcv");
 	                exit(EXIT_FAILURE);
 	        }
@@ -117,7 +117,7 @@ int main(int argc, char **argv)
 		my_id = lbuf.param;
 
 	        // Return message in queue
-	        if (msgsnd(msgid, &lbuf, sizeof(long), IPC_NOWAIT) < 0) {
+	        if (msgsnd(msgid, &lbuf, sizeof(msg_long_buf_t) - sizeof(long), IPC_NOWAIT) < 0) {
 	                perror("msgsnd");
 	                exit(EXIT_FAILURE);
 	        }
@@ -157,6 +157,8 @@ int main(int argc, char **argv)
                 memset(nicknames[i], (int)' ', sizeof(char) * MAX_NICKNAME_LEN);
                 nicknames[i][MAX_NICKNAME_LEN] = '\0';
         }
+
+	memcpy(nicknames[0], lp.nickname, sizeof(char) * strlen(lp.nickname));
 
 	// Thread for regular messages init
         msg_rcv_in_data_t msg_rcv_in;
@@ -455,13 +457,13 @@ int sendmessage(int msgid, const char* nickname, const char* msg)
 {
 	// Blocking msgrcv to get amount of members
         msg_long_buf_t lbuf;
-        if (msgrcv(msgid, &lbuf, sizeof(long), MEMBERS_COUNT_MTYPE, 0) < 0) {
+        if (msgrcv(msgid, &lbuf, sizeof(msg_long_buf_t) - sizeof(long), MEMBERS_COUNT_MTYPE, 0) < 0) {
         	perror("msgrcv");
                 exit(EXIT_FAILURE);
 	}
 
         // Return message in queue
-        if (msgsnd(msgid, &lbuf, sizeof(long), IPC_NOWAIT) < 0) {
+        if (msgsnd(msgid, &lbuf, sizeof(msg_long_buf_t) - sizeof(long), IPC_NOWAIT) < 0) {
         	perror("msgsnd");
                 exit(EXIT_FAILURE);
 	}
@@ -520,7 +522,21 @@ void *messages_reciever_work(void *args)
 			memcpy(data->allmsg[i], data->allmsg[i + 1],  sizeof(char) * data->allmsg_len);		
 		memcpy(data->allmsg[data->linescount - 1], rbuf.mtext, sizeof(char) * strlen(rbuf.mtext));
 
-		// TODO Seek for the members and add, if there is new
+		// Seek the user's nickname in the list
+		char sbuf[MAX_NICKNAME_LEN + 1];
+		memcpy(sbuf, rbuf.mtext, MAX_NICKNAME_LEN * sizeof(char));
+		sbuf[MAX_NICKNAME_LEN] = '\0';		
+
+		for (i = 0; i < data->linescount; i++) {
+			if (strcmp(sbuf, data->nicknames[i]) == 0) break;
+		}
+
+		// If it is new member, add his nickname to the list
+		if (i == data->linescount) {
+			for (i = (data->linescount - 1); i > 0; i--)
+                       		memcpy(data->nicknames[i], data->nicknames[i - 1],  sizeof(char) * MAX_NICKNAME_LEN);
+                	memcpy(data->nicknames[0], rbuf.mtext, sizeof(char) * MAX_NICKNAME_LEN);
+		}
 
 		// Refresh windows
 		refresh_windows(data->std_win_p, data->allmsg_win_p, data->members_win_p, data->usermsg_win_p,
