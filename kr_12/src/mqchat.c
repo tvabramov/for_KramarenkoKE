@@ -30,6 +30,11 @@ typedef struct msgbuf {
 	char mtext[MSGSZ];
 } msgbuf_t;
 
+typedef struct msg_long_buf {
+        long mtype;
+        long param;
+} msg_long_buf_t;
+
 #define MTYPE_REGULAR 2L
 //#define MTYPE_NICKNAME 1L
 
@@ -37,6 +42,7 @@ typedef struct msgbuf {
 // For thread msg_rcv:
 typedef struct msg_rcv_in_data_t_struct {
 	int msgid;
+	long my_id;
         char **allmsg;
 	char *usermsg;
 	char **nicknames; 
@@ -63,7 +69,9 @@ void initNC();
 int sendmessage(int msgid, const char* nickname, const char* msg);
 void *messages_reciever_work(void *args);
 
-//#difine COUNT_
+#define MEMBERS_COUNT_MTYPE 1L
+
+long getMyMessageMType(long member_id);
 
 int main(int argc, char **argv)
 {
@@ -81,6 +89,38 @@ int main(int argc, char **argv)
 	if (msgid < 0) {
 		fprintf(stderr, "Cannot start msg\n");
 		exit(EXIT_FAILURE);
+	}
+
+	// We must place one special message in the queue, that holds amout of members
+	// We use it to find ou id
+	long my_id = -1;
+
+	if (lp.i_am_server == 1) {
+		my_id = 1L;
+
+		msg_long_buf_t lbuf;
+		lbuf.mtype = MEMBERS_COUNT_MTYPE;
+		lbuf.param = 1L;
+        	if (msgsnd(msgid, &lbuf, sizeof(long), IPC_NOWAIT) < 0) {
+               		perror("msgsnd");
+	                exit(EXIT_FAILURE);
+	        }
+	} else {
+		// Get amount of members
+	        msg_long_buf_t lbuf;
+	        if (msgrcv(msgid, &lbuf, sizeof(long), MEMBERS_COUNT_MTYPE, 0) < 0) {
+	                perror("msgrcv");
+	                exit(EXIT_FAILURE);
+	        }
+
+		lbuf.param++;
+		my_id = lbuf.param;
+
+	        // Return message in queue
+	        if (msgsnd(msgid, &lbuf, sizeof(long), IPC_NOWAIT) < 0) {
+	                perror("msgsnd");
+	                exit(EXIT_FAILURE);
+	        }
 	}
 
 	// NCurses initialization
@@ -121,6 +161,7 @@ int main(int argc, char **argv)
 	// Thread for regular messages init
         msg_rcv_in_data_t msg_rcv_in;
 	msg_rcv_in.msgid = msgid;
+	msg_rcv_in.my_id = my_id;
 	msg_rcv_in.allmsg = allmsg;
 	msg_rcv_in.usermsg = usermsg;
 	msg_rcv_in.nicknames = nicknames;
@@ -150,18 +191,13 @@ int main(int argc, char **argv)
                 exit(EXIT_FAILURE);
         }
 
-	//
-
-        // Send my nickname
-	//sendnickname(msgid, lp.nickname);
-
 	// Windows first refreshing to show default data
 	pthread_mutex_lock(&main_mutex);
 
 	refresh_windows(std_win_p, allmsg_win_p, members_win_p, usermsg_win_p, allmsg_win, members_win, usermsg_win, allmsg, allmsg_lines_count, nicknames, usermsg);
 
 	pthread_mutex_unlock(&main_mutex);
-	
+//endwin(); exit(0);	
 	while (1)
 	{
 		// Getting current working dir and files
@@ -417,21 +453,40 @@ void initNC()
 
 int sendmessage(int msgid, const char* nickname, const char* msg)
 {
-	msgbuf_t buf;
+	// Blocking msgrcv to get amount of members
+        msg_long_buf_t lbuf;
+        if (msgrcv(msgid, &lbuf, sizeof(long), MEMBERS_COUNT_MTYPE, 0) < 0) {
+        	perror("msgrcv");
+                exit(EXIT_FAILURE);
+	}
 
-	buf.mtype = MTYPE_REGULAR;
+        // Return message in queue
+        if (msgsnd(msgid, &lbuf, sizeof(long), IPC_NOWAIT) < 0) {
+        	perror("msgsnd");
+                exit(EXIT_FAILURE);
+	}
 
-	memset(buf.mtext, (int)' ', sizeof(char) * MAX_NICKNAME_LEN);                    // for nickname
-	memset(&buf.mtext[MAX_NICKNAME_LEN + 2], (int)'-', sizeof(char) * MAX_MSG_LEN);  // for message
-	buf.mtext[MSGSZ - 1] = '\0';
-	memcpy(buf.mtext, nickname, strlen(nickname));
-	buf.mtext[MAX_NICKNAME_LEN] = ':';
-	buf.mtext[MAX_NICKNAME_LEN + 1] = ' ';
-	memcpy(&buf.mtext[MAX_NICKNAME_LEN + 2], msg, strlen(msg));
+	// Now we have members count in lbuf.param
+        // We can send messages to the all members (including ourselves)
+        long member;
+        for (member = 1L; member <= lbuf.param; member++)
+	{
+		msgbuf_t buf;
 
-	if (msgsnd(msgid, &buf, MSGSZ * sizeof(char), IPC_NOWAIT) < 0) {
-        	perror("msgsnd error");
-        	return -1;
+		buf.mtype = getMyMessageMType(member);
+
+		memset(buf.mtext, (int)' ', sizeof(char) * MAX_NICKNAME_LEN);                    // for nickname
+		memset(&buf.mtext[MAX_NICKNAME_LEN + 2], (int)'-', sizeof(char) * MAX_MSG_LEN);  // for message
+		buf.mtext[MSGSZ - 1] = '\0';
+		memcpy(buf.mtext, nickname, strlen(nickname));
+		buf.mtext[MAX_NICKNAME_LEN] = ':';
+		buf.mtext[MAX_NICKNAME_LEN + 1] = ' ';
+		memcpy(&buf.mtext[MAX_NICKNAME_LEN + 2], msg, strlen(msg));
+
+		if (msgsnd(msgid, &buf, MSGSZ * sizeof(char), IPC_NOWAIT) < 0) {
+	        	perror("msgsnd");
+	        	return -1;
+		}
 	}
 
 	return 0;
@@ -441,26 +496,31 @@ void *messages_reciever_work(void *args)
 {
 	msg_rcv_in_data_t *data = (msg_rcv_in_data_t *)args;
 
-	for ( ; ; ) {
-		// TODO This cycle is no-blocking, so it may take many time
-		msgbuf_t rbuf;
-        	if (msgrcv(data->msgid, &rbuf, MSGSZ, MTYPE_REGULAR, IPC_NOWAIT) < 0) {
-			// If there is no message
-			if (errno == ENOMSG) continue;
 
-			// in another way we cancel it
+	// TODO This cycle is no-blocking, so it may take many time
+	for ( ; ; )
+	{
+		pthread_mutex_lock(&main_mutex);
+
+		msgbuf_t rbuf;
+     		if (msgrcv(data->msgid, &rbuf, MSGSZ, getMyMessageMType(data->my_id), IPC_NOWAIT) < 0) {
+			// If there is no message
+			if (errno == ENOMSG) {
+				pthread_mutex_unlock(&main_mutex);
+				continue;
+			}
+			// In any another case we cancel it
                 	perror("msgrcv");
                 	exit(EXIT_FAILURE);
         	}	
-
-		pthread_mutex_lock(&main_mutex);
-	
+		
+		// Add new message	
 		int i;
 		for (i = 0; i < (data->linescount - 1); i++)
-			memcpy(data->allmsg[i],
-                               data->allmsg[i + 1],
-			       sizeof(char) * data->allmsg_len);		
+			memcpy(data->allmsg[i], data->allmsg[i + 1],  sizeof(char) * data->allmsg_len);		
 		memcpy(data->allmsg[data->linescount - 1], rbuf.mtext, sizeof(char) * strlen(rbuf.mtext));
+
+		// TODO Seek for the members and add, if there is new
 
 		// Refresh windows
 		refresh_windows(data->std_win_p, data->allmsg_win_p, data->members_win_p, data->usermsg_win_p,
@@ -473,4 +533,7 @@ void *messages_reciever_work(void *args)
 	return NULL;	
 }
 
-
+long getMyMessageMType(long member_id)
+{
+	return member_id + MEMBERS_COUNT_MTYPE;
+}
