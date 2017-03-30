@@ -12,4 +12,6 @@
 * kr_9 - 9-th work, simulating the typical pthread data transferring error
 * kr_10 - 10-th work, isolated program which lauches piped programs, such as "ls | head -n 5"
 * kr_11 - 11-th work, file manager with piped launching.
-* kr_12 - 12-th the file chat via IPC (Message Queues) mechanism.
+* kr_12 - 12-th work, chat via IPC (Message Queues) mechanism.
+* kr_13 - 13-th work, chat via Shared Memory mechanism.
+* kr_14 - 14-th work, client-server via sockets (SOCK_DGRAM)

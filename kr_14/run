@@ -1,0 +1,6 @@
+#!/bin/bash
+
+./bin/udpserver &
+sleep 1s
+./bin/udpclient
+

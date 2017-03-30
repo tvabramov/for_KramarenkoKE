@@ -4,9 +4,8 @@ Text chat via IPC (Message Queues) mechanism.
 
 USING:
 
-mqchat <>
-
-If you want to run piped, "ls -1 | head -n 5", for example, use F8 key.
+Create server with name "Server": mqchat -s -n "Server"
+Create client with name "Client": mqchat -n "Client"
 
 HELP:
 
