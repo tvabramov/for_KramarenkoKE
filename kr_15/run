@@ -1,0 +1,6 @@
+#!/bin/bash
+
+./bin/tcpserver &
+sleep 1s
+./bin/tcpclient
+

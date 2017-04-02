@@ -15,3 +15,5 @@
 * kr_12 - 12-th work, chat via IPC (Message Queues) mechanism.
 * kr_13 - 13-th work, chat via Shared Memory mechanism.
 * kr_14 - 14-th work, client-server via sockets (SOCK_DGRAM)
+* kr_15 - 15-th work, client-server via sockets (SOCK_STREAM)
+

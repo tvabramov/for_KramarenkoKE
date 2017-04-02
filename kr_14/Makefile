@@ -2,19 +2,14 @@ CC = gcc
 CFLAGS = -Wall -O0 -ggdb
 LDFLAGS = -pthread
 
-all: udpserver udpclient
+all: ./bin/udpserver ./bin/udpclient
 
-udpserver: ./src/udpserver.o
-	$(CC) $(LDFLAGS) ./src/udpserver.o -o ./bin/udpserver
+./bin/udpserver: ./src/udpserver.c ./src/common.h
+	$(CC) $(CFLAGS) $(LDFLAGS) ./src/udpserver.c -o ./bin/udpserver
 
-udpclient: ./src/udpclient.o
-	$(CC) $(LDFLAGS) ./src/udpclient.o -o ./bin/udpclient
+./bin/udpclient: ./src/udpclient.c ./src/common.h
+	$(CC) $(CFLAGS) $(LDFLAGS) ./src/udpclient.c -o ./bin/udpclient
 
-udpserver.o: ./src/udpserver.c ./src/common.h
-	$(CC) $(CFLAGS) ./src/udpserver.c -c
+clean: 
+	rm ./bin/*
 
-udpclient.o: ./src/udpclient.c ./src/common.h
-	$(CC) $(CFLAGS) ./src/udpclient.c -c
-
-clean:
-	rm ./bin/* ./src/*.o

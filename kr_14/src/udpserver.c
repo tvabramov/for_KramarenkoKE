@@ -28,22 +28,34 @@ int main(int argc, char **argv)
                 goto error;
 	}
 
-{
+	// Recieving the message from the client
+	char buf[BUFLEN];
+
 	struct sockaddr_in out_addr;
-	socklen_t out_addr_len;
-	char buf[BUFLEN + 1];
+	socklen_t out_addr_len = sizeof(out_addr);
+	memset(buf, 0, BUFLEN);
 	if (recvfrom(sockfd, buf, BUFLEN, 0, (struct sockaddr *)&out_addr, &out_addr_len) == -1) {
 		perror("[UDP SERVER]: recvfrom");
 		goto error;
 	}
-
 	printf("[UDP SERVER]: Recieved message \"%s\"\n", buf);
-}
-	shutdown(sockfd, SHUT_RDWR);
+
+	// Sending the answer
+	if (strcmp(buf, "HELLO") == 0) {
+		memset(buf, 0, BUFLEN);
+		sprintf(buf, "HI");
+	        if (sendto(sockfd, buf, BUFLEN, 0, (struct sockaddr *)&out_addr, sizeof(out_addr)) == -1) {
+	                perror("[UDP SERVER]: sendto");
+                	goto error;
+        	}
+		printf("[UDP SERVER]: Sended message \"%s\"\n", buf);
+	}
+
+	close(sockfd);
 	exit(EXIT_SUCCESS);
 
 error:
-	shutdown(sockfd, SHUT_RDWR);
+	close(sockfd);
 
         exit(EXIT_FAILURE);
 }
