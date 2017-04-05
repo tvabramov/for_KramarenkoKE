@@ -1,0 +1,12 @@
+DESCRIPTION:
+
+Text chat via IPC (Shared memory) mechanism.
+
+USING:
+
+Create server with name "Server": smchat -s -n "Server"
+Create client with name "Client": smchat -n "Client"
+
+HELP:
+
+https://www.opennet.ru/base/dev/ipc_msg.txt.html

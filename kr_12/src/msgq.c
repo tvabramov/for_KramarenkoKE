@@ -3,7 +3,7 @@
 
 int start_server()
 {
-	key_t key = ftok("/home/students/tvabramov/kr_12/bin/mqchat", (int)'a');
+	key_t key = ftok("./mqchat", (int)'a');
 	if (key < (key_t)1) {
 		perror("ftok error");
 		return -1;
@@ -20,7 +20,7 @@ int start_server()
 
 int start_client()
 {
-	key_t key = ftok("/home/students/tvabramov/kr_12/bin/mqchat", (int)'a');
+	key_t key = ftok("./mqchat", (int)'a');
         if (key < (key_t)1) {
                 perror("ftok error");
                 return -1;
