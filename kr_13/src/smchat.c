@@ -64,7 +64,7 @@ void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS m
                      char *usermsg);
 void initNC();
 
-int atomic_get_and_inc_members_count(char *shmdata);
+int atomic_get_and_inc_members_count(char *shmdata, int semid);
 void getMessage(char *shmdata, int curr_id, int my_id, char *buf, int semid);
 void setMessage(char *shmdata, int my_id, char *buf, int semid);
 
@@ -109,8 +109,8 @@ int main(int argc, char **argv)
 	//Creating semaphores set
 
 	// create a semaphore set with MAX_USER_COUNT semaphores: 
-	int semid = (lp.i_am_server == 1) ? semget(key, MAX_USER_COUNT, 0666 | IPC_CREAT) :
-					    semget(key, MAX_USER_COUNT, 0);
+	int semid = (lp.i_am_server == 1) ? semget(key, MAX_USER_COUNT + 1, 0666 | IPC_CREAT) :
+					    semget(key, MAX_USER_COUNT + 1, 0);
 	if (semid == -1) {
 		perror("semget");
 		goto error;
@@ -121,7 +121,7 @@ int main(int argc, char **argv)
 		union semun arg;
 		arg.val = 1;
 		int semnum;
-		for (semnum = 0; semnum < MAX_USER_COUNT; semnum++) {
+		for (semnum = 0; semnum < MAX_USER_COUNT + 1; semnum++) {
 			if (semctl(semid, semnum, SETVAL, arg) == -1) {
 				perror("semctl");
 				goto error;
@@ -136,9 +136,9 @@ int main(int argc, char **argv)
 	if (lp.i_am_server == 1) {
 		my_id = 0;
 		memset(shmdata, 0, SHM_MAX_LEN);
-		(*(int *)shmdata) = 1; // Firsh bytes = int
+		(*(int *)shmdata) = 1; // First bytes = int
 	} else {
-		my_id = atomic_get_and_inc_members_count(shmdata);
+		my_id = atomic_get_and_inc_members_count(shmdata, semid);
 	}
 
 	printf("My id = %d\n", my_id);
@@ -287,7 +287,9 @@ exit:
 	}
 	// End Semaphore
 	if (lp.i_am_server == 1) {
-		semctl(semid, 0, IPC_RMID, 0);
+		int semnum;
+                for (semnum = 0; semnum < MAX_USER_COUNT + 1; semnum++)
+			semctl(semid, semnum, IPC_RMID, NULL);
 	}
 	// Free memory
 	free(usermsg);
@@ -307,7 +309,12 @@ exit:
 error:
 	endwin();
 
-	if (lp.i_am_server == 1) shmctl(shmid, IPC_RMID, NULL);
+	if (lp.i_am_server == 1) {
+		shmctl(shmid, IPC_RMID, NULL);
+		int semnum;
+		for (semnum = 0; semnum < MAX_USER_COUNT + 1; semnum++)
+			semctl(semid, semnum, IPC_RMID, NULL);
+	}
 
 	exit(EXIT_FAILURE);
 }
@@ -534,11 +541,26 @@ void *messages_reciever_work(void *args)
 	return NULL;	
 }
 
-int atomic_get_and_inc_members_count(char *shmdata)
+// It uses sem at number [MAX_USER_COUNT]
+int atomic_get_and_inc_members_count(char *shmdata, int semid)
 {
+	// lock
+        struct sembuf sb = {(unsigned short)MAX_USER_COUNT, (short)-1, (short)0};
+        if (semop(semid, &sb, 1) == -1) {
+                perror("semop");
+                exit(EXIT_FAILURE);
+        }
+
 	int memcnt = *(int *)shmdata;
 
 	(*(int *)shmdata)++;
+
+	// unlock
+        sb.sem_op = (short)1;
+        if (semop(semid, &sb, 1) == -1) {
+                perror("semop");
+                exit(EXIT_FAILURE);
+        }
 
 	return memcnt;
 }
