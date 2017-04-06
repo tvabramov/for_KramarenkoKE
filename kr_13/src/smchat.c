@@ -12,6 +12,7 @@
 #include <ctype.h>
 #include <pthread.h>
 #include <sys/ipc.h>
+#include <sys/sem.h>
 #include <sys/shm.h>
 #include "clinit.h"
 
@@ -29,6 +30,7 @@ typedef struct WIN_PARAMS_struct {
 // For thread msg_rcv:
 typedef struct msg_rcv_in_data_t_struct {
 	char *shmdata;
+	int semid;
 	int my_id;
         char **allmsg;
 	char *usermsg;
@@ -41,6 +43,14 @@ typedef struct msg_rcv_in_data_t_struct {
 
 //Mutex to refresh windows, changing messages list
 pthread_mutex_t main_mutex;
+
+union semun {
+	int val;    /* Value for SETVAL */
+	struct semid_ds *buf;    /* Buffer for IPC_STAT, IPC_SET */
+	unsigned short  *array;  /* Array for GETALL, SETALL */
+	struct seminfo  *__buf;  /* Buffer for IPC_INFO
+                                   (Linux specific) */
+};
 
 void destroy_win(WINDOW *local_win);
 void init_windows_params(WIN_PARAMS *std_win_p, WIN_PARAMS *allmsg_win_p, WIN_PARAMS *members_win_p, WIN_PARAMS *usermsg_win_p);
@@ -55,8 +65,8 @@ void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS m
 void initNC();
 
 int atomic_get_and_inc_members_count(char *shmdata);
-void getMessage(char *shmdata, int curr_id, int my_id, char *buf);
-void setMessage(char *shmdata, int my_id, char *buf);
+void getMessage(char *shmdata, int curr_id, int my_id, char *buf, int semid);
+void setMessage(char *shmdata, int my_id, char *buf, int semid);
 
 void *messages_reciever_work(void *args);
 
@@ -79,8 +89,11 @@ int main(int argc, char **argv)
 		goto error;
 	}
 
+	// Creating shared memory segment
+
 	// For both client and server - the shared memory segment identifier
-	int shmid = shmget(key, SHM_MAX_LEN, 0666 | IPC_CREAT); // we can use IPC_CREAT for client and server
+	int shmid = (lp.i_am_server == 1) ? shmget(key, SHM_MAX_LEN, 0666 | IPC_CREAT) :
+					    shmget(key, SHM_MAX_LEN, 0); // we can use IPC_CREAT for client and server
 	if (shmid == -1) {
 		perror("shmget");
 		goto error;
@@ -91,6 +104,29 @@ int main(int argc, char **argv)
 	if (shmdata == (char *)(-1)) {
 		perror("shmat");
                 goto error;
+	}
+
+	//Creating semaphores set
+
+	// create a semaphore set with MAX_USER_COUNT semaphores: 
+	int semid = (lp.i_am_server == 1) ? semget(key, MAX_USER_COUNT, 0666 | IPC_CREAT) :
+					    semget(key, MAX_USER_COUNT, 0);
+	if (semid == -1) {
+		perror("semget");
+		goto error;
+	}
+
+	// initialize semaphores to 1:
+	if (lp.i_am_server == 1) {
+		union semun arg;
+		arg.val = 1;
+		int semnum;
+		for (semnum = 0; semnum < MAX_USER_COUNT; semnum++) {
+			if (semctl(semid, semnum, SETVAL, arg) == -1) {
+				perror("semctl");
+				goto error;
+			}
+		}
 	}
 
 	// We must place one special message in the shmdata, that holds amout of members
@@ -147,6 +183,7 @@ int main(int argc, char **argv)
 	// Thread for regular messages init
         msg_rcv_in_data_t msg_rcv_in;
 	msg_rcv_in.shmdata = shmdata;
+	msg_rcv_in.semid = semid;
 	msg_rcv_in.my_id = my_id;
 	msg_rcv_in.allmsg = allmsg;
 	msg_rcv_in.usermsg = usermsg;
@@ -205,7 +242,7 @@ int main(int argc, char **argv)
 				msgbuf[MAX_NICKNAME_LEN + 1] = ' ';
 				memcpy(&msgbuf[MAX_NICKNAME_LEN + 2], usermsg, strlen(usermsg));
 				
-				setMessage(shmdata, my_id, msgbuf);
+				setMessage(shmdata, my_id, msgbuf, semid);
 
 				memset(usermsg, 0, sizeof(char) * MAX_MSG_LEN);
 
@@ -242,11 +279,15 @@ exit:
 	pthread_cancel(msg_rcv_thread);
 	// End ncurses mode
 	endwin();
-	// End IPC connection
+	// End IPC shm connection
 	if (lp.i_am_server == 1) {
 		shmctl(shmid, IPC_RMID, NULL);
 	} else {
 		shmdt(shmdata);
+	}
+	// End Semaphore
+	if (lp.i_am_server == 1) {
+		semctl(semid, 0, IPC_RMID, 0);
 	}
 	// Free memory
 	free(usermsg);
@@ -440,22 +481,23 @@ void *messages_reciever_work(void *args)
 	msg_rcv_in_data_t *data = (msg_rcv_in_data_t *)args;
 	for ( ; ; )
 	{
-		sleep(1);
-
 		pthread_mutex_lock(&main_mutex);
 
+		int rcvd = 0;
 		int curr_id;
 		for (curr_id = 0; curr_id < MAX_USER_COUNT; curr_id++)
 		{
 			char rbuf[MAX_MSG_LEN + MAX_NICKNAME_LEN + 3];
 
-			getMessage(data->shmdata, curr_id, data->my_id, rbuf);
+			getMessage(data->shmdata, curr_id, data->my_id, rbuf, data->semid);
 
 			if (strlen(rbuf) == 0) {
 				//pthread_mutex_unlock(&main_mutex);
 				continue;
         		}	
-		
+			
+			rcvd = 1;
+
 			// Add new message	
 			int i;
 			for (i = 0; i < (data->linescount - 1); i++)
@@ -480,9 +522,11 @@ void *messages_reciever_work(void *args)
 		}
 
 		// Refresh windows
-		refresh_windows(data->std_win_p, data->allmsg_win_p, data->members_win_p, data->usermsg_win_p,
-                                data->allmsg_win, data->members_win, data->usermsg_win,
-                                data->allmsg, data->linescount, data->nicknames, data->usermsg);
+		if (rcvd == 1) {
+			refresh_windows(data->std_win_p, data->allmsg_win_p, data->members_win_p, data->usermsg_win_p,
+                        	        data->allmsg_win, data->members_win, data->usermsg_win,
+                                	data->allmsg, data->linescount, data->nicknames, data->usermsg);
+		}
 
 		pthread_mutex_unlock(&main_mutex);
 	}	
@@ -510,9 +554,20 @@ int getFlagFromId(int id) {
 	return flag;
 }
 
-void getMessage(char *shmdata, int curr_id, int my_id, char *buf)
+void getMessage(char *shmdata, int curr_id, int my_id, char *buf, int semid)
 {
 	memset(buf, 0, (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));
+
+	// lock
+        struct sembuf sb = {curr_id, (short)-1, IPC_NOWAIT};
+        if (semop(semid, &sb, 1) == -1) {
+                if (errno == EAGAIN) {
+			return;
+		} else {		
+			perror("semop");
+	                exit(EXIT_FAILURE);
+		}		
+        }
 
 	size_t offset = sizeof(int) + (size_t)curr_id * ((MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char) + sizeof(int));
 
@@ -523,17 +578,36 @@ void getMessage(char *shmdata, int curr_id, int my_id, char *buf)
 		(*(int *)((size_t)shmdata + offset)) = flags | getFlagFromId(my_id);
 
 		memcpy(buf, (char *)((size_t)shmdata + offset + sizeof(int)), (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));
-
-		//memset((char *)((size_t)shmdata + offset + sizeof(int)), 0, (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));
 	}
+
+	// unlock
+        sb.sem_op = (short)1;
+        if (semop(semid, &sb, 1) == -1) {
+                perror("semop");
+                exit(EXIT_FAILURE);
+        }
 }
 
-void setMessage(char *shmdata, int my_id, char *buf)
+void setMessage(char *shmdata, int my_id, char *buf, int semid)
 {
+	// lock
+        struct sembuf sb = {(unsigned short)my_id, (short)-1, (short)0};
+        if (semop(semid, &sb, 1) == -1) {
+                perror("semop");
+                exit(EXIT_FAILURE);
+        }
+
         size_t offset = sizeof(int) + (size_t)my_id * ((MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char) + sizeof(int));
 
 	(*(int *)((size_t)shmdata + offset)) = 0;
 
-        memcpy((char *)((size_t)shmdata + offset + sizeof(int)), buf, (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));	
+        memcpy((char *)((size_t)shmdata + offset + sizeof(int)), buf, (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));
+
+	// unlock
+	sb.sem_op = (short)1;
+	if (semop(semid, &sb, 1) == -1) {
+		perror("semop");
+		exit(EXIT_FAILURE);
+	}
 }
 
