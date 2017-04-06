@@ -568,10 +568,7 @@ int atomic_get_and_inc_members_count(char *shmdata, int semid)
 int getFlagFromId(int id) {
 	int flag = 1;
 
-	if (id == 0) flag = 1;
-	else if (id == 1) flag = 2;
-	else if (id == 2) flag = 4;
-	//flag = flag << id;
+	flag = flag << id;
 
 	return flag;
 }
