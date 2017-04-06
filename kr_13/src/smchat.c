@@ -18,7 +18,7 @@
 #define MAX_MSG_LEN 55
 #define MAX_USER_COUNT 10
 /** Shared memory segment size in bytes = mem for messages and one int - count of members */
-#define SHM_MAX_LEN ((MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * MAX_USER_COUNT * sizeof(char) + sizeof(int))
+#define SHM_MAX_LEN (((MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char) + sizeof(int)) * MAX_USER_COUNT + sizeof(int))
 
 typedef struct WIN_PARAMS_struct {
 	int bx, by;
@@ -55,8 +55,8 @@ void refresh_windows(WIN_PARAMS std_win_p, WIN_PARAMS allmsg_win_p, WIN_PARAMS m
 void initNC();
 
 int atomic_get_and_inc_members_count(char *shmdata);
-void getMessage(char *shmdata, int id, char *buf);
-void setMessage(char *shmdata, int id, char *buf);
+void getMessage(char *shmdata, int curr_id, int my_id, char *buf);
+void setMessage(char *shmdata, int my_id, char *buf);
 
 void *messages_reciever_work(void *args);
 
@@ -99,10 +99,13 @@ int main(int argc, char **argv)
 
 	if (lp.i_am_server == 1) {
 		my_id = 0;
+		memset(shmdata, 0, SHM_MAX_LEN);
 		(*(int *)shmdata) = 1; // Firsh bytes = int
 	} else {
 		my_id = atomic_get_and_inc_members_count(shmdata);
 	}
+
+	printf("My id = %d\n", my_id);
 
 	// NCurses initialization
 	initNC();
@@ -437,39 +440,43 @@ void *messages_reciever_work(void *args)
 	msg_rcv_in_data_t *data = (msg_rcv_in_data_t *)args;
 	for ( ; ; )
 	{
-		sleep (1);
+		sleep(1);
 
 		pthread_mutex_lock(&main_mutex);
 
-		char rbuf[MAX_MSG_LEN + MAX_NICKNAME_LEN + 3];
+		int curr_id;
+		for (curr_id = 0; curr_id < MAX_USER_COUNT; curr_id++)
+		{
+			char rbuf[MAX_MSG_LEN + MAX_NICKNAME_LEN + 3];
 
-		getMessage(data->shmdata, data->my_id, rbuf);
+			getMessage(data->shmdata, curr_id, data->my_id, rbuf);
 
-     		if (strlen(rbuf) == 0) {
-			pthread_mutex_unlock(&main_mutex);
-			continue;
-        	}	
+			if (strlen(rbuf) == 0) {
+				//pthread_mutex_unlock(&main_mutex);
+				continue;
+        		}	
 		
-		// Add new message	
-		int i;
-		for (i = 0; i < (data->linescount - 1); i++)
-			memcpy(data->allmsg[i], data->allmsg[i + 1],  sizeof(char) * data->allmsg_len);		
-		memcpy(data->allmsg[data->linescount - 1], rbuf, sizeof(char) * strlen(rbuf));
+			// Add new message	
+			int i;
+			for (i = 0; i < (data->linescount - 1); i++)
+				memcpy(data->allmsg[i], data->allmsg[i + 1],  sizeof(char) * data->allmsg_len);		
+			memcpy(data->allmsg[data->linescount - 1], rbuf, sizeof(char) * strlen(rbuf));
 
-		// Seek the user's nickname in the list
-		char sbuf[MAX_NICKNAME_LEN + 1];
-		memcpy(sbuf, rbuf, MAX_NICKNAME_LEN * sizeof(char));
-		sbuf[MAX_NICKNAME_LEN] = '\0';		
+			// Seek the user's nickname in the list
+			char sbuf[MAX_NICKNAME_LEN + 1];
+			memcpy(sbuf, rbuf, MAX_NICKNAME_LEN * sizeof(char));
+			sbuf[MAX_NICKNAME_LEN] = '\0';		
 
-		for (i = 0; i < data->linescount; i++) {
-			if (strcmp(sbuf, data->nicknames[i]) == 0) break;
-		}
+			for (i = 0; i < data->linescount; i++) {
+				if (strcmp(sbuf, data->nicknames[i]) == 0) break;
+			}
 
-		// If it is new member, add his nickname to the list
-		if (i == data->linescount) {
-			for (i = (data->linescount - 1); i > 0; i--)
-                       		memcpy(data->nicknames[i], data->nicknames[i - 1],  sizeof(char) * MAX_NICKNAME_LEN);
-                	memcpy(data->nicknames[0], rbuf, sizeof(char) * MAX_NICKNAME_LEN);
+			// If it is new member, add his nickname to the list
+			if (i == data->linescount) {
+				for (i = (data->linescount - 1); i > 0; i--)
+					memcpy(data->nicknames[i], data->nicknames[i - 1],  sizeof(char) * MAX_NICKNAME_LEN);
+	                	memcpy(data->nicknames[0], rbuf, sizeof(char) * MAX_NICKNAME_LEN);
+			}
 		}
 
 		// Refresh windows
@@ -492,20 +499,41 @@ int atomic_get_and_inc_members_count(char *shmdata)
 	return memcnt;
 }
 
-void getMessage(char *shmdata, int id, char *buf)
+int getFlagFromId(int id) {
+	int flag = 1;
+
+	if (id == 0) flag = 1;
+	else if (id == 1) flag = 2;
+	else if (id == 2) flag = 4;
+	//flag = flag << id;
+
+	return flag;
+}
+
+void getMessage(char *shmdata, int curr_id, int my_id, char *buf)
 {
 	memset(buf, 0, (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));
 
-	size_t offset = sizeof(int) + (size_t)id * (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char);
-	memcpy(buf, (char *)((size_t)shmdata + offset), (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));
+	size_t offset = sizeof(int) + (size_t)curr_id * ((MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char) + sizeof(int));
 
-	memset((char *)((size_t)shmdata + offset), 0, (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));
+	int flags = *(int *)((size_t)shmdata + offset);
+	
+	if ((flags & getFlagFromId(my_id)) == 0) {
+		// If I have already read this message
+		(*(int *)((size_t)shmdata + offset)) = flags | getFlagFromId(my_id);
+
+		memcpy(buf, (char *)((size_t)shmdata + offset + sizeof(int)), (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));
+
+		//memset((char *)((size_t)shmdata + offset + sizeof(int)), 0, (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));
+	}
 }
 
-void setMessage(char *shmdata, int id, char *buf)
+void setMessage(char *shmdata, int my_id, char *buf)
 {
-        size_t offset = sizeof(int) + (size_t)id * (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char);
+        size_t offset = sizeof(int) + (size_t)my_id * ((MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char) + sizeof(int));
 
-        memcpy((char *)((size_t)shmdata + offset), buf, (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));	
+	(*(int *)((size_t)shmdata + offset)) = 0;
+
+        memcpy((char *)((size_t)shmdata + offset + sizeof(int)), buf, (MAX_MSG_LEN + MAX_NICKNAME_LEN + 3) * sizeof(char));	
 }
 
