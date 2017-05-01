@@ -1,0 +1,8 @@
+#!/bin/bash
+
+./bin/server &
+sleep 1s
+./bin/tcpclient
+./bin/udpclient
+./bin/tcpclient
+./bin/udpclient
