@@ -1,11 +1,17 @@
 CC = gcc
-CFLAGS = -Wall -O0 -ggdb -I/home/students/tvabramov/my-libpcap/include
-LDFLAGS = -L/home/students/tvabramov/my-libpcap/lib -lpcap
+CFLAGS = -Wall -O0 -ggdb
+LDFLAGS = -lpcap
 
 all: ./bin/snif
 
-./bin/snif: ./src/snif.c
-	$(CC) $(CFLAGS) ./src/snif.c -o ./bin/snif $(LDFLAGS)
+./bin/snif: ./src/snif.o ./src/clinit.o
+	$(CC) ./src/snif.o ./src/clinit.o -o ./bin/snif $(LDFLAGS)
+
+./src/snif.o: ./src/snif.c
+	$(CC) $(CFLAGS) -c ./src/snif.c -o ./src/snif.o
+
+./src/clinit.o: ./src/clinit.c ./src/clinit.h
+	$(CC) $(CFLAGS) -c ./src/clinit.c -o ./src/clinit.o
 
 #./bin/tcpclient: ./src/tcpclient.c ./src/common.h
 #	$(CC) $(CFLAGS) $(LDFLAGS) ./src/tcpclient.c -o ./bin/tcpclient
@@ -14,5 +20,5 @@ all: ./bin/snif
 #	$(CC) $(CFLAGS) $(LDFLAGS) ./src/udpclient.c -o ./bin/udpclient
 
 clean:
-	rm ./bin/*
+	rm ./bin/* ./src/*.o
 

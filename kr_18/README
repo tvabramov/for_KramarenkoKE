@@ -1,1 +1,12 @@
-Network packet sniffer via libpcap.
+Network packet sniffer via libpcap. 
+
+1. Avaliable keys:
+  -h or --help: Print help information;
+  -d or --device: Specify device to sniff;
+  -f or --filter: Specify filter string;
+  -l or --list: Print list of the devices.
+
+2. Usage:
+  There is two main use-cases:
+    a) snif -l : Get list of the device;
+    b) snif -d <device> -f <filter> : Sniff the <device> with the <filter> string.
