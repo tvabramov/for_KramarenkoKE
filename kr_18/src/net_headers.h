@@ -28,13 +28,13 @@
 /* Octets in ethernet address */
 #define ETH_ALEN 6
 
-struct ethhdr
-{
-  unsigned char h_dest[ETH_ALEN];
-  unsigned char h_source[ETH_ALEN];
+//struct ethhdr
+//{
+//  unsigned char h_dest[ETH_ALEN];
+//  unsigned char h_source[ETH_ALEN];
   /* packet type ID */
-  uint16_t      h_proto;
-} __attribute__((packed));
+//  uint16_t      h_proto;
+//} __attribute__((packed));
 
 #define IP_HEADER_PROTOCOL_TCP 6
 #define IP_HEADER_PROTOCOL_UDP 17

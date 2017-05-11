@@ -8,6 +8,10 @@
 #include <string.h>
 #include "clinit.h"
 #include "net_headers.h"
+#include <netinet/if_ether.h>
+#include <net/ethernet.h>
+#include <netinet/ether.h>
+
 
 #define SNAPLENMAX 65535
 #define PRINT_BYTES_PER_LINE 16
@@ -147,6 +151,32 @@ void print_data_hex(const uint8_t* data, int size)
 
 void handle_packet(uint8_t* user, const struct pcap_pkthdr *hdr, const uint8_t* bytes)
 {
+	// ---------Ethernet---------
+
+	struct ether_header *eptr;  /* net/ethernet.h */
+
+	/* lets start with the ether header... */
+	eptr = (struct ether_header *)bytes;
+
+	printf("ethernet header source: %s", ether_ntoa((const struct ether_addr *)&eptr->ether_shost));
+	printf(" destination: %s ", ether_ntoa((const struct ether_addr *)&eptr->ether_dhost));
+
+	/* check to see if we have an ip packet */
+	if (ntohs(eptr->ether_type) == ETHERTYPE_IP) {
+		printf("(IP)");
+	} else if (ntohs(eptr->ether_type) == ETHERTYPE_ARP) {
+		printf("(ARP)");
+	} else if (ntohs(eptr->ether_type) == ETHERTYPE_REVARP) {
+		printf("(RARP)");
+	} else {
+		printf("(?)");
+	}
+	printf("\n");
+
+	if (ntohs(eptr->ether_type) != ETHERTYPE_IP) return;
+
+	// ---------IP (if it is IP)---------
+
 	struct iphdr* ip_header = (struct iphdr*)(bytes + sizeof(struct ethhdr));
 	struct sockaddr_in source, dest;
 
@@ -159,6 +189,22 @@ void handle_packet(uint8_t* user, const struct pcap_pkthdr *hdr, const uint8_t* 
 	char dest_ip[128];
 	strncpy(source_ip, inet_ntoa(source.sin_addr), sizeof(source_ip));
 	strncpy(dest_ip, inet_ntoa(dest.sin_addr), sizeof(dest_ip));
+
+	printf("  ip header source: %s", source_ip);
+	printf(" destination: %s ", dest_ip);
+
+	if (ip_header->protocol == IP_HEADER_PROTOCOL_TCP) {
+		printf("(TCP)");
+	} else if (ip_header->protocol == IP_HEADER_PROTOCOL_UDP) {
+		printf("(UDP)");
+	} else {
+		printf("(?)");
+	}
+	printf("\n");
+
+	if (ip_header->protocol != IP_HEADER_PROTOCOL_TCP && ip_header->protocol != IP_HEADER_PROTOCOL_UDP) return;
+
+	// ---------TCP or UDP---------
 
 	int source_port = 0;
 	int dest_port = 0;
@@ -179,7 +225,8 @@ void handle_packet(uint8_t* user, const struct pcap_pkthdr *hdr, const uint8_t* 
 		data_size = hdr->len - sizeof(struct ethhdr) - ip_header_size - sizeof(struct udphdr);
 	}
 
-	printf("\n%s:%d -> %s:%d, %d (0x%x) bytes\n\n", source_ip, source_port, dest_ip, dest_port, data_size, data_size);
+	printf("    Src port = %d, dest port = %d, data size = %d (0x%x) bytes\n\n", source_port, dest_port, data_size, data_size);
+	//printf("\n%s:%d -> %s:%d, %d (0x%x) bytes\n\n", source_ip, source_port, dest_ip, dest_port, data_size, data_size);
 
 	if (data_size > 0) {
 		int headers_size = hdr->len - data_size;
