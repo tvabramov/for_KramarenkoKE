@@ -1,0 +1,4 @@
+#!/bin/bash
+
+dig @8.8.8.8 eax.me
+

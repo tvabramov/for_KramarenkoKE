@@ -6,12 +6,12 @@
 #include <arpa/inet.h> 
 #include <pcap.h>
 #include <string.h>
-#include "clinit.h"
-#include "net_headers.h"
 #include <netinet/if_ether.h>
-#include <net/ethernet.h>
 #include <netinet/ether.h>
-
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+#include "clinit.h"
 
 #define SNAPLENMAX 65535
 #define PRINT_BYTES_PER_LINE 16
@@ -193,16 +193,17 @@ void handle_packet(uint8_t* user, const struct pcap_pkthdr *hdr, const uint8_t* 
 	printf("  ip header source: %s", source_ip);
 	printf(" destination: %s ", dest_ip);
 
-	if (ip_header->protocol == IP_HEADER_PROTOCOL_TCP) {
+	if (ip_header->protocol == IPPROTO_TCP) {
 		printf("(TCP)");
-	} else if (ip_header->protocol == IP_HEADER_PROTOCOL_UDP) {
+	} else if (ip_header->protocol == IPPROTO_UDP) {
 		printf("(UDP)");
 	} else {
 		printf("(?)");
 	}
 	printf("\n");
 
-	if (ip_header->protocol != IP_HEADER_PROTOCOL_TCP && ip_header->protocol != IP_HEADER_PROTOCOL_UDP) return;
+	if (ip_header->protocol != IPPROTO_TCP && ip_header->protocol != IPPROTO_UDP)
+		return;
 
 	// ---------TCP or UDP---------
 
@@ -212,13 +213,13 @@ void handle_packet(uint8_t* user, const struct pcap_pkthdr *hdr, const uint8_t* 
 	int ip_header_size = ip_header->ihl * 4;
 	char* next_header = (char*)ip_header + ip_header_size;
 
-	if (ip_header->protocol == IP_HEADER_PROTOCOL_TCP) {
+	if (ip_header->protocol == IPPROTO_TCP) {
 		struct tcphdr* tcp_header = (struct tcphdr*)next_header;
 		source_port = ntohs(tcp_header->source);
 		dest_port = ntohs(tcp_header->dest);
 		int tcp_header_size = tcp_header->doff * 4;
 		data_size = hdr->len - sizeof(struct ethhdr) - ip_header_size - tcp_header_size;
-	} else if(ip_header->protocol == IP_HEADER_PROTOCOL_UDP) {
+	} else if (ip_header->protocol == IPPROTO_UDP) {
 		struct udphdr* udp_header = (struct udphdr*)next_header;
 		source_port = ntohs(udp_header->source);
 		dest_port = ntohs(udp_header->dest);

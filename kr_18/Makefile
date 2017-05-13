@@ -13,12 +13,6 @@ all: ./bin/snif
 ./src/clinit.o: ./src/clinit.c ./src/clinit.h
 	$(CC) $(CFLAGS) -c ./src/clinit.c -o ./src/clinit.o
 
-#./bin/tcpclient: ./src/tcpclient.c ./src/common.h
-#	$(CC) $(CFLAGS) $(LDFLAGS) ./src/tcpclient.c -o ./bin/tcpclient
-
-#./bin/udpclient: ./src/udpclient.c ./src/common.h
-#	$(CC) $(CFLAGS) $(LDFLAGS) ./src/udpclient.c -o ./bin/udpclient
-
 clean:
 	rm ./bin/* ./src/*.o
 
