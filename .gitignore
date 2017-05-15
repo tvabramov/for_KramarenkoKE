@@ -1,4 +1,5 @@
 *.[oa]
 *~
-kr_18/bin/
-kr_19/bin/
+kr_18/bin/*
+kr_19/bin/*
+kr_20/bin/*

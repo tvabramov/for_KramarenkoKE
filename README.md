@@ -20,3 +20,4 @@
 * kr_17 - Client-servier via TCP and UDP simultaneously. On new connection it creates copy of itself and creates new connection on new port. It uses poll.
 * kr_18 - Network packet sniffer via libpcap.
 * kr_19 - UDP client-server with raw client's socket
+* kr_20 - UDP client-server with raw client's socket (UDP + IP levels)
