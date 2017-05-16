@@ -17,15 +17,16 @@
 
 int main(int argc, char **argv)
 {
-	int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+	int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+	//int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
 
 	if (sockfd == -1) {
 		perror("[UDP CLIENT]: socket");
 		goto error;
 	}
 
-	//int on = 1;
-	//setsockopt(sockfd, /*IPPROTO_IP*/ IPPROTO_RAW, IP_HDRINCL, &on, sizeof(on));
+	int on = 1;
+	setsockopt(sockfd, IPPROTO_IP /*IPPROTO_RAW*/, IP_HDRINCL, &on, sizeof(on));
 
 	struct sockaddr_in srv_addr;
 	memset(&srv_addr, 0, sizeof(srv_addr));
@@ -73,8 +74,6 @@ int main(int argc, char **argv)
 	}
 	printf("[UDP CLIENT]: Sended message \"%s\"\n", buf + sizeof(struct iphdr) + sizeof(struct udphdr));
 
-	exit(EXIT_SUCCESS);
-
 	socklen_t srv_addr_len = sizeof(srv_addr);
 	memset(buf, 0, BUFLEN + sizeof(struct udphdr) + sizeof(struct iphdr));
 
@@ -83,7 +82,7 @@ int main(int argc, char **argv)
                 goto error;
         }
         printf("[UDP CLIENT]: Recieved message \"%s\"\n", buf + sizeof(struct udphdr) + sizeof(struct iphdr));
-exit(0);
+
 	if (recvfrom(sockfd, buf, BUFLEN + sizeof(struct udphdr) + sizeof(struct iphdr), 0, (struct sockaddr *)&srv_addr, &srv_addr_len) == -1) {
                 perror("[UDP CLIENT]: recvfrom");
                 goto error;
