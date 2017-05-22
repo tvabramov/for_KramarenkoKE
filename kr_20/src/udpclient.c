@@ -18,7 +18,6 @@
 int main(int argc, char **argv)
 {
 	int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
-	//int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
 
 	if (sockfd == -1) {
 		perror("[UDP CLIENT]: socket");
@@ -26,7 +25,7 @@ int main(int argc, char **argv)
 	}
 
 	int on = 1;
-	setsockopt(sockfd, IPPROTO_IP /*IPPROTO_RAW*/, IP_HDRINCL, &on, sizeof(on));
+	setsockopt(sockfd, IPPROTO_IP /*IPPROTO_UDP*/, IP_HDRINCL, &on, sizeof(on));
 
 	struct sockaddr_in srv_addr;
 	memset(&srv_addr, 0, sizeof(srv_addr));
